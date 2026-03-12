@@ -247,11 +247,12 @@ export default function DashboardPage() {
         e.stopPropagation();
         const url = image.imageUrl || image.thumbUrl;
         try {
-            const res = await fetch(url);
+            // Fetch via our proxy to bypass CORS
+            const proxyUrl = `/api/image-proxy?url=${encodeURIComponent(url)}`;
+            const res = await fetch(proxyUrl);
             const blob = await res.blob();
             // Convert to PNG for clipboard compatibility
             const img = new Image();
-            img.crossOrigin = 'anonymous';
             const loaded = new Promise((resolve, reject) => {
                 img.onload = resolve;
                 img.onerror = reject;

@@ -1,0 +1,51 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model User {
+  id        String   @id @default(cuid())
+  username  String   @unique
+  password  String
+  name      String
+  role      String   @default("editor")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  selections Selection[]
+}
+
+model Selection {
+  id        String   @id @default(cuid())
+  userId    String
+  imageUrl  String
+  thumbUrl  String
+  title     String?
+  source    String
+  sourceId  String?
+  metadata  String?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+}
+
+model SearchLog {
+  id        String   @id @default(cuid())
+  query     String
+  sources   String
+  results   Int      @default(0)
+  userId    String?
+  createdAt DateTime @default(now())
+}
+
+model Setting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+}

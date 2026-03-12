@@ -3,7 +3,8 @@ import { NextResponse } from 'next/server';
 export async function GET(request) {
     const { searchParams } = new URL(request.url);
     const query = searchParams.get('q');
-    const page = parseInt(searchParams.get('page') || '1', 10);
+    const offset = parseInt(searchParams.get('offset') || '0', 10);
+    const limit = parseInt(searchParams.get('limit') || '20', 10);
 
     if (!query) return NextResponse.json({ results: [], total: 0 });
 
@@ -12,6 +13,9 @@ export async function GET(request) {
     if (!apiKey) {
         return NextResponse.json({ results: [], total: 0, error: 'Serper API key not configured' });
     }
+
+    // Convert offset to page number (Serper uses 1-based pages)
+    const page = Math.floor(offset / limit) + 1;
 
     try {
         const res = await fetch('https://google.serper.dev/images', {
@@ -23,7 +27,7 @@ export async function GET(request) {
             body: JSON.stringify({
                 q: `site:theepochtimes.com ${query}`,
                 page,
-                num: 20,
+                num: limit,
             }),
         });
 
@@ -49,11 +53,11 @@ export async function GET(request) {
             }),
         }));
 
-        // Serper doesn't return a total count, but if we got a full page, there's likely more
-        const hasMore = images.length >= 20;
-        const estimatedTotal = hasMore ? (page * 20) + 20 : (page - 1) * 20 + images.length;
+        // Serper doesn't give exact total — if we got a full page, assume there's more
+        const hasMoreResults = images.length >= limit;
+        const estimatedTotal = hasMoreResults ? offset + images.length + 100 : offset + images.length;
 
-        return NextResponse.json({ results, total: estimatedTotal, hasMore });
+        return NextResponse.json({ results, total: estimatedTotal });
     } catch (error) {
         console.error('Epoch Times Web search error:', error);
         return NextResponse.json({ results: [], total: 0, error: error.message });

@@ -49,6 +49,8 @@ export default function DashboardPage() {
     const [lastQuery, setLastQuery] = useState('');
     const [lastSources, setLastSources] = useState([]);
     const sentinelRef = useRef(null);
+    const sourceOffsetsRef = useRef({});
+    const sourceTotalsRef = useRef({});
 
     // Load more results for infinite scroll
     const loadMore = useCallback(async () => {
@@ -57,23 +59,28 @@ export default function DashboardPage() {
         setLoadingMore(true);
         try {
             const newResults = [];
-            const newOffsets = { ...sourceOffsets };
+            const currentOffsets = { ...sourceOffsetsRef.current };
+            const currentTotals = sourceTotalsRef.current;
             let stillHasMore = false;
 
             for (const source of lastSources) {
-                const currentOffset = newOffsets[source] || 0;
-                const total = sourceTotals[source] || 0;
+                const offset = currentOffsets[source] || 0;
+                const total = currentTotals[source] || 0;
 
-                if (currentOffset >= total) continue;
+                if (offset >= total) continue;
 
                 try {
-                    const res = await fetch(`/api/search/${source}?q=${encodeURIComponent(lastQuery)}&offset=${currentOffset}&limit=20`);
+                    const res = await fetch(`/api/search/${source}?q=${encodeURIComponent(lastQuery)}&offset=${offset}&limit=20`);
                     if (res.ok) {
                         const data = await res.json();
                         const items = data.results || [];
                         newResults.push(...items);
-                        newOffsets[source] = currentOffset + items.length;
-                        if (newOffsets[source] < (data.total || total)) {
+                        currentOffsets[source] = offset + items.length;
+                        // Update total from API response (may grow for Serper)
+                        if (data.total) {
+                            currentTotals[source] = data.total;
+                        }
+                        if (currentOffsets[source] < (data.total || total)) {
                             stillHasMore = true;
                         }
                     }
@@ -85,14 +92,17 @@ export default function DashboardPage() {
             if (newResults.length > 0) {
                 setResults(prev => [...prev, ...newResults]);
             }
-            setSourceOffsets(newOffsets);
+            sourceOffsetsRef.current = currentOffsets;
+            sourceTotalsRef.current = currentTotals;
+            setSourceOffsets(currentOffsets);
+            setSourceTotals({ ...currentTotals });
             setHasMore(stillHasMore);
         } catch (err) {
             console.error('Load more error:', err);
         } finally {
             setLoadingMore(false);
         }
-    }, [loadingMore, hasMore, lastQuery, lastSources, sourceOffsets, sourceTotals]);
+    }, [loadingMore, hasMore, lastQuery, lastSources]);
 
     // IntersectionObserver for infinite scroll
     useEffect(() => {
@@ -161,6 +171,8 @@ export default function DashboardPage() {
             setResults(allResults);
             setSourceOffsets(offsets);
             setSourceTotals(totals);
+            sourceOffsetsRef.current = offsets;
+            sourceTotalsRef.current = totals;
             setLastQuery(q);
             setLastSources(sourcesToSearch);
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { useSession, signOut } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 
@@ -23,11 +23,20 @@ export default function DashboardPage() {
     const [activeSource, setActiveSource] = useState('all');
     const [results, setResults] = useState([]);
     const [loading, setLoading] = useState(false);
+    const [loadingMore, setLoadingMore] = useState(false);
     const [keywords, setKeywords] = useState([]);
     const [selections, setSelections] = useState([]);
     const [showArticlePanel, setShowArticlePanel] = useState(false);
     const [aiAnalysis, setAiAnalysis] = useState(null);
     const [aiLoading, setAiLoading] = useState(false);
+
+    // Infinite scroll state
+    const [sourceOffsets, setSourceOffsets] = useState({});
+    const [sourceTotals, setSourceTotals] = useState({});
+    const [hasMore, setHasMore] = useState(false);
+    const [lastQuery, setLastQuery] = useState('');
+    const [lastSources, setLastSources] = useState([]);
+    const sentinelRef = useRef(null);
 
     // Redirect if not authenticated
     if (status === 'unauthenticated') {
@@ -49,6 +58,10 @@ export default function DashboardPage() {
         if (!q.trim()) return;
 
         setLoading(true);
+        setResults([]);
+        const offsets = {};
+        const totals = {};
+
         try {
             const sourcesToSearch = activeSource === 'all'
                 ? ['epochtimes', 'wordpress', 'shutterstock', 'getty', 'ap', 'reuters']
@@ -58,10 +71,13 @@ export default function DashboardPage() {
 
             for (const source of sourcesToSearch) {
                 try {
-                    const res = await fetch(`/api/search/${source}?q=${encodeURIComponent(q)}`);
+                    const res = await fetch(`/api/search/${source}?q=${encodeURIComponent(q)}&offset=0&limit=20`);
                     if (res.ok) {
                         const data = await res.json();
-                        allResults.push(...(data.results || []));
+                        const items = data.results || [];
+                        allResults.push(...items);
+                        offsets[source] = items.length;
+                        totals[source] = data.total || items.length;
                     }
                 } catch (err) {
                     console.warn(`Search failed for ${source}:`, err);
@@ -69,6 +85,14 @@ export default function DashboardPage() {
             }
 
             setResults(allResults);
+            setSourceOffsets(offsets);
+            setSourceTotals(totals);
+            setLastQuery(q);
+            setLastSources(sourcesToSearch);
+
+            // Check if any source has more results
+            const anyMore = sourcesToSearch.some(s => (offsets[s] || 0) < (totals[s] || 0));
+            setHasMore(anyMore);
         } catch (err) {
             console.error('Search error:', err);
         } finally {
@@ -129,6 +153,68 @@ export default function DashboardPage() {
             handleSearch();
         }
     };
+
+    // Load more results for infinite scroll
+    const loadMore = useCallback(async () => {
+        if (loadingMore || !hasMore || !lastQuery) return;
+
+        setLoadingMore(true);
+        try {
+            const newResults = [];
+            const newOffsets = { ...sourceOffsets };
+            let stillHasMore = false;
+
+            for (const source of lastSources) {
+                const currentOffset = newOffsets[source] || 0;
+                const total = sourceTotals[source] || 0;
+
+                if (currentOffset >= total) continue;
+
+                try {
+                    const res = await fetch(`/api/search/${source}?q=${encodeURIComponent(lastQuery)}&offset=${currentOffset}&limit=20`);
+                    if (res.ok) {
+                        const data = await res.json();
+                        const items = data.results || [];
+                        newResults.push(...items);
+                        newOffsets[source] = currentOffset + items.length;
+                        if (newOffsets[source] < (data.total || total)) {
+                            stillHasMore = true;
+                        }
+                    }
+                } catch (err) {
+                    console.warn(`Load more failed for ${source}:`, err);
+                }
+            }
+
+            if (newResults.length > 0) {
+                setResults(prev => [...prev, ...newResults]);
+            }
+            setSourceOffsets(newOffsets);
+            setHasMore(stillHasMore);
+        } catch (err) {
+            console.error('Load more error:', err);
+        } finally {
+            setLoadingMore(false);
+        }
+    }, [loadingMore, hasMore, lastQuery, lastSources, sourceOffsets, sourceTotals]);
+
+    // IntersectionObserver for infinite scroll
+    useEffect(() => {
+        const sentinel = sentinelRef.current;
+        if (!sentinel) return;
+
+        const observer = new IntersectionObserver(
+            (entries) => {
+                if (entries[0].isIntersecting && hasMore && !loadingMore && !loading) {
+                    loadMore();
+                }
+            },
+            { rootMargin: '200px' }
+        );
+
+        observer.observe(sentinel);
+        return () => observer.disconnect();
+    }, [hasMore, loadingMore, loading, loadMore]);
 
     return (
         <>
@@ -330,7 +416,7 @@ export default function DashboardPage() {
                 {results.length > 0 && (
                     <div className="results-info">
                         <div className="results-count">
-                            Found <span>{results.length}</span> images
+                            Showing <span>{results.length}</span> of <span>{Object.values(sourceTotals).reduce((a, b) => a + b, 0)}</span> images
                         </div>
                     </div>
                 )}
@@ -364,6 +450,18 @@ export default function DashboardPage() {
                                 </div>
                             </div>
                         ))}
+                        {/* Sentinel for infinite scroll */}
+                        <div ref={sentinelRef} style={{ gridColumn: '1 / -1', height: '1px' }} />
+                        {loadingMore && (
+                            <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'center', padding: '24px 0' }}>
+                                <div className="loading-spinner" />
+                            </div>
+                        )}
+                        {!hasMore && results.length > 20 && (
+                            <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '16px 0', color: 'var(--text-muted)', fontSize: '13px' }}>
+                                All results loaded
+                            </div>
+                        )}
                     </div>
                 ) : (
                     <div className="empty-state">

@@ -3,13 +3,15 @@ import { NextResponse } from 'next/server';
 export async function GET(request) {
     const { searchParams } = new URL(request.url);
     const query = searchParams.get('q');
+    const offset = parseInt(searchParams.get('offset') || '0', 10);
+    const limit = parseInt(searchParams.get('limit') || '20', 10);
 
-    if (!query) return NextResponse.json({ results: [] });
+    if (!query) return NextResponse.json({ results: [], total: 0 });
 
     const apiKey = process.env.EPOCH_IMAGES_API_KEY;
 
     if (!apiKey) {
-        return NextResponse.json({ results: [], error: 'Epoch Times API key not configured' });
+        return NextResponse.json({ results: [], total: 0, error: 'Epoch Times API key not configured' });
     }
 
     try {
@@ -22,8 +24,8 @@ export async function GET(request) {
             body: JSON.stringify({
                 search: query,
                 searchType: 'newest',
-                offset: 0,
-                limit: 20,
+                offset,
+                limit,
                 videoOnly: false,
             }),
         });

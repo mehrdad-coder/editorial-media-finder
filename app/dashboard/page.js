@@ -38,6 +38,68 @@ export default function DashboardPage() {
     const [lastSources, setLastSources] = useState([]);
     const sentinelRef = useRef(null);
 
+    // Load more results for infinite scroll
+    const loadMore = useCallback(async () => {
+        if (loadingMore || !hasMore || !lastQuery) return;
+
+        setLoadingMore(true);
+        try {
+            const newResults = [];
+            const newOffsets = { ...sourceOffsets };
+            let stillHasMore = false;
+
+            for (const source of lastSources) {
+                const currentOffset = newOffsets[source] || 0;
+                const total = sourceTotals[source] || 0;
+
+                if (currentOffset >= total) continue;
+
+                try {
+                    const res = await fetch(`/api/search/${source}?q=${encodeURIComponent(lastQuery)}&offset=${currentOffset}&limit=20`);
+                    if (res.ok) {
+                        const data = await res.json();
+                        const items = data.results || [];
+                        newResults.push(...items);
+                        newOffsets[source] = currentOffset + items.length;
+                        if (newOffsets[source] < (data.total || total)) {
+                            stillHasMore = true;
+                        }
+                    }
+                } catch (err) {
+                    console.warn(`Load more failed for ${source}:`, err);
+                }
+            }
+
+            if (newResults.length > 0) {
+                setResults(prev => [...prev, ...newResults]);
+            }
+            setSourceOffsets(newOffsets);
+            setHasMore(stillHasMore);
+        } catch (err) {
+            console.error('Load more error:', err);
+        } finally {
+            setLoadingMore(false);
+        }
+    }, [loadingMore, hasMore, lastQuery, lastSources, sourceOffsets, sourceTotals]);
+
+    // IntersectionObserver for infinite scroll
+    useEffect(() => {
+        const sentinel = sentinelRef.current;
+        if (!sentinel) return;
+
+        const observer = new IntersectionObserver(
+            (entries) => {
+                if (entries[0].isIntersecting && hasMore && !loadingMore && !loading) {
+                    loadMore();
+                }
+            },
+            { rootMargin: '200px' }
+        );
+
+        observer.observe(sentinel);
+        return () => observer.disconnect();
+    }, [hasMore, loadingMore, loading, loadMore]);
+
     // Redirect if not authenticated
     if (status === 'unauthenticated') {
         router.push('/');
@@ -154,67 +216,7 @@ export default function DashboardPage() {
         }
     };
 
-    // Load more results for infinite scroll
-    const loadMore = useCallback(async () => {
-        if (loadingMore || !hasMore || !lastQuery) return;
 
-        setLoadingMore(true);
-        try {
-            const newResults = [];
-            const newOffsets = { ...sourceOffsets };
-            let stillHasMore = false;
-
-            for (const source of lastSources) {
-                const currentOffset = newOffsets[source] || 0;
-                const total = sourceTotals[source] || 0;
-
-                if (currentOffset >= total) continue;
-
-                try {
-                    const res = await fetch(`/api/search/${source}?q=${encodeURIComponent(lastQuery)}&offset=${currentOffset}&limit=20`);
-                    if (res.ok) {
-                        const data = await res.json();
-                        const items = data.results || [];
-                        newResults.push(...items);
-                        newOffsets[source] = currentOffset + items.length;
-                        if (newOffsets[source] < (data.total || total)) {
-                            stillHasMore = true;
-                        }
-                    }
-                } catch (err) {
-                    console.warn(`Load more failed for ${source}:`, err);
-                }
-            }
-
-            if (newResults.length > 0) {
-                setResults(prev => [...prev, ...newResults]);
-            }
-            setSourceOffsets(newOffsets);
-            setHasMore(stillHasMore);
-        } catch (err) {
-            console.error('Load more error:', err);
-        } finally {
-            setLoadingMore(false);
-        }
-    }, [loadingMore, hasMore, lastQuery, lastSources, sourceOffsets, sourceTotals]);
-
-    // IntersectionObserver for infinite scroll
-    useEffect(() => {
-        const sentinel = sentinelRef.current;
-        if (!sentinel) return;
-
-        const observer = new IntersectionObserver(
-            (entries) => {
-                if (entries[0].isIntersecting && hasMore && !loadingMore && !loading) {
-                    loadMore();
-                }
-            },
-            { rootMargin: '200px' }
-        );
-
-        observer.observe(sentinel);
-        return () => observer.disconnect();
-    }, [hasMore, loadingMore, loading, loadMore]);
 
     return (
         <>

@@ -232,20 +232,6 @@ export default function DashboardPage() {
         }
     };
 
-    const toggleSelection = (image) => {
-        setSelections((prev) => {
-            const exists = prev.find((s) => s.imageUrl === image.imageUrl);
-            if (exists) {
-                return prev.filter((s) => s.imageUrl !== image.imageUrl);
-            }
-            return [...prev, image];
-        });
-    };
-
-    const isSelected = (image) => {
-        return selections.some((s) => s.imageUrl === image.imageUrl);
-    };
-
     const handleKeyDown = (e) => {
         if (e.key === 'Enter') {
             handleSearch();
@@ -581,27 +567,7 @@ export default function DashboardPage() {
                 )}
             </main>
 
-            {/* Selections Panel */}
-            <div className={`selections-panel ${selections.length > 0 ? 'visible' : ''}`}>
-                <div className="selections-header">
-                    <div className="selections-title">
-                        📌 Selected Images <span className="selections-count">{selections.length}</span>
-                    </div>
-                </div>
-                <div className="selections-thumbnails">
-                    {selections.map((sel, i) => (
-                        <div key={i} className="selection-thumb">
-                            <img src={sel.thumbUrl || sel.imageUrl} alt={sel.title || ''} />
-                            <button
-                                className="selection-thumb-remove"
-                                onClick={() => toggleSelection(sel)}
-                            >
-                                ✕
-                            </button>
-                        </div>
-                    ))}
-                </div>
-            </div>
+
 
             {/* Lightbox Modal */}
             {lightboxImage && (

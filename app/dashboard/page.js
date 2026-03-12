@@ -122,6 +122,18 @@ export default function DashboardPage() {
         return () => observer.disconnect();
     }, [hasMore, loadingMore, loading, loadMore]);
 
+    // Auto-search when source filter changes
+    const isFirstRender = useRef(true);
+    useEffect(() => {
+        if (isFirstRender.current) {
+            isFirstRender.current = false;
+            return;
+        }
+        if (query.trim()) {
+            handleSearch(query);
+        }
+    }, [activeSource]);
+
     // Redirect if not authenticated
     if (status === 'unauthenticated') {
         router.push('/');

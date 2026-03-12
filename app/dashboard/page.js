@@ -36,11 +36,11 @@ export default function DashboardPage() {
     const [loading, setLoading] = useState(false);
     const [loadingMore, setLoadingMore] = useState(false);
     const [keywords, setKeywords] = useState([]);
-    const [selections, setSelections] = useState([]);
     const [showArticlePanel, setShowArticlePanel] = useState(false);
     const [aiAnalysis, setAiAnalysis] = useState(null);
     const [aiLoading, setAiLoading] = useState(false);
     const [toast, setToast] = useState(null);
+    const [lightboxImage, setLightboxImage] = useState(null);
 
     // Infinite scroll state
     const [sourceOffsets, setSourceOffsets] = useState({});
@@ -257,14 +257,40 @@ export default function DashboardPage() {
         setTimeout(() => setToast(null), 2000);
     };
 
-    const handleCopyUrl = async (e, image) => {
+    const handleCopyImage = async (e, image) => {
         e.stopPropagation();
         const url = image.imageUrl || image.thumbUrl;
         try {
-            await navigator.clipboard.writeText(url);
-            showToast('📋 Image URL copied!');
+            const res = await fetch(url);
+            const blob = await res.blob();
+            // Convert to PNG for clipboard compatibility
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            const loaded = new Promise((resolve, reject) => {
+                img.onload = resolve;
+                img.onerror = reject;
+            });
+            img.src = URL.createObjectURL(blob);
+            await loaded;
+            const canvas = document.createElement('canvas');
+            canvas.width = img.naturalWidth;
+            canvas.height = img.naturalHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0);
+            URL.revokeObjectURL(img.src);
+            const pngBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+            await navigator.clipboard.write([
+                new ClipboardItem({ 'image/png': pngBlob })
+            ]);
+            showToast('📋 Image copied! Paste anywhere');
         } catch {
-            showToast('❌ Copy failed');
+            // Fallback: copy URL
+            try {
+                await navigator.clipboard.writeText(url);
+                showToast('📋 URL copied (image copy not supported)');
+            } catch {
+                showToast('❌ Copy failed');
+            }
         }
     };
 
@@ -284,7 +310,6 @@ export default function DashboardPage() {
             URL.revokeObjectURL(blobUrl);
             showToast('⬇️ Download started!');
         } catch {
-            // Fallback: open in new tab
             window.open(url, '_blank');
             showToast('📎 Opened in new tab');
         }
@@ -505,39 +530,31 @@ export default function DashboardPage() {
                 ) : results.length > 0 ? (
                     <div className="image-grid">
                         {results.map((image, index) => (
-                            <div key={`${image.source}-${image.id || index}`} className="image-card">
+                            <div key={`${image.source}-${image.id || index}`} className="image-card" onClick={() => setLightboxImage(image)}>
                                 <div className="image-card-img-wrapper">
                                     <img src={image.thumbUrl || image.imageUrl} alt={image.title || 'Image'} loading="lazy" />
-                                    <div className="image-card-overlay">
-                                        <div className="image-card-actions">
-                                            <button
-                                                className={`pick-btn ${isSelected(image) ? 'picked' : ''}`}
-                                                onClick={(e) => { e.stopPropagation(); toggleSelection(image); }}
-                                            >
-                                                {isSelected(image) ? '✓' : '+'}
-                                            </button>
-                                            <button
-                                                className="action-btn copy-btn"
-                                                onClick={(e) => handleCopyUrl(e, image)}
-                                                title="Copy image URL"
-                                            >
-                                                📋
-                                            </button>
-                                            <button
-                                                className="action-btn download-btn"
-                                                onClick={(e) => handleDownload(e, image)}
-                                                title="Download image"
-                                            >
-                                                ⬇️
-                                            </button>
-                                        </div>
-                                    </div>
                                 </div>
                                 <div className="image-card-info">
                                     <div className="image-card-title">{image.title || 'Untitled'}</div>
                                     <div className="image-card-meta">
                                         <span className={`image-card-source ${image.source}`}>{SOURCE_LABELS[image.source] || image.source}</span>
                                         {image.date && <span className="image-card-date">{image.date}</span>}
+                                        <div className="image-card-btns">
+                                            <button
+                                                className="card-action-btn"
+                                                onClick={(e) => handleCopyImage(e, image)}
+                                                title="Copy image to clipboard"
+                                            >
+                                                📋
+                                            </button>
+                                            <button
+                                                className="card-action-btn"
+                                                onClick={(e) => handleDownload(e, image)}
+                                                title="Download image"
+                                            >
+                                                ⬇️
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -585,6 +602,26 @@ export default function DashboardPage() {
                     ))}
                 </div>
             </div>
+
+            {/* Lightbox Modal */}
+            {lightboxImage && (
+                <div className="lightbox-overlay" onClick={() => setLightboxImage(null)}>
+                    <button className="lightbox-close" onClick={() => setLightboxImage(null)}>✕</button>
+                    <img
+                        className="lightbox-img"
+                        src={lightboxImage.imageUrl || lightboxImage.thumbUrl}
+                        alt={lightboxImage.title || 'Image'}
+                        onClick={(e) => e.stopPropagation()}
+                    />
+                    <div className="lightbox-info" onClick={(e) => e.stopPropagation()}>
+                        <div className="lightbox-title">{lightboxImage.title || 'Untitled'}</div>
+                        <div className="lightbox-actions">
+                            <button className="lightbox-btn" onClick={(e) => handleCopyImage(e, lightboxImage)}>📋 Copy Image</button>
+                            <button className="lightbox-btn" onClick={(e) => handleDownload(e, lightboxImage)}>⬇️ Download</button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Toast Notification */}
             {toast && (

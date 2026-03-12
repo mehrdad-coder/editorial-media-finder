@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 
 const SOURCES = [
     { id: 'all', label: 'All Sources', color: '#a29bfe' },
+    { id: 'epochtimes', label: 'Epoch Times', color: '#1a3a5c' },
     { id: 'wordpress', label: 'WordPress', color: '#00cec9' },
     { id: 'shutterstock', label: 'Shutterstock', color: '#e17055' },
     { id: 'getty', label: 'Getty Images', color: '#fdcb6e' },
@@ -50,7 +51,7 @@ export default function DashboardPage() {
         setLoading(true);
         try {
             const sourcesToSearch = activeSource === 'all'
-                ? ['wordpress', 'shutterstock', 'getty', 'ap', 'reuters']
+                ? ['epochtimes', 'wordpress', 'shutterstock', 'getty', 'ap', 'reuters']
                 : [activeSource];
 
             const allResults = [];

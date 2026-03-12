@@ -667,6 +667,11 @@ body::before {
   background: rgba(211, 84, 0, 0.08);
 }
 
+.image-card-source.epochtimes {
+  color: #1a3a5c;
+  background: rgba(26, 58, 92, 0.08);
+}
+
 .image-card-date {
   font-size: 11px;
   color: var(--text-muted);

@@ -6,13 +6,24 @@ import { useRouter } from 'next/navigation';
 
 const SOURCES = [
     { id: 'all', label: 'All Sources', color: '#a29bfe' },
-    { id: 'epochtimes', label: 'Epoch Times', color: '#1a3a5c' },
+    { id: 'epochtimes', label: 'ET Photo Wire', color: '#1a3a5c' },
+    { id: 'epochtimes-web', label: 'ET Published', color: '#2d6a4f' },
     { id: 'wordpress', label: 'WordPress', color: '#00cec9' },
     { id: 'shutterstock', label: 'Shutterstock', color: '#e17055' },
     { id: 'getty', label: 'Getty Images', color: '#fdcb6e' },
     { id: 'ap', label: 'AP', color: '#74b9ff' },
     { id: 'reuters', label: 'Reuters', color: '#ff7675' },
 ];
+
+const SOURCE_LABELS = {
+    'epochtimes': 'ET Photo Wire',
+    'epochtimes-web': 'ET Published',
+    'wordpress': 'WordPress',
+    'shutterstock': 'Shutterstock',
+    'getty': 'Getty',
+    'ap': 'AP',
+    'reuters': 'Reuters',
+};
 
 export default function DashboardPage() {
     const { data: session, status } = useSession();
@@ -29,6 +40,7 @@ export default function DashboardPage() {
     const [showArticlePanel, setShowArticlePanel] = useState(false);
     const [aiAnalysis, setAiAnalysis] = useState(null);
     const [aiLoading, setAiLoading] = useState(false);
+    const [toast, setToast] = useState(null);
 
     // Infinite scroll state
     const [sourceOffsets, setSourceOffsets] = useState({});
@@ -126,7 +138,7 @@ export default function DashboardPage() {
 
         try {
             const sourcesToSearch = activeSource === 'all'
-                ? ['epochtimes', 'wordpress', 'shutterstock', 'getty', 'ap', 'reuters']
+                ? ['epochtimes', 'epochtimes-web', 'wordpress', 'shutterstock', 'getty', 'ap', 'reuters']
                 : [activeSource];
 
             const allResults = [];
@@ -213,6 +225,44 @@ export default function DashboardPage() {
     const handleKeyDown = (e) => {
         if (e.key === 'Enter') {
             handleSearch();
+        }
+    };
+
+    const showToast = (message) => {
+        setToast(message);
+        setTimeout(() => setToast(null), 2000);
+    };
+
+    const handleCopyUrl = async (e, image) => {
+        e.stopPropagation();
+        const url = image.imageUrl || image.thumbUrl;
+        try {
+            await navigator.clipboard.writeText(url);
+            showToast('📋 Image URL copied!');
+        } catch {
+            showToast('❌ Copy failed');
+        }
+    };
+
+    const handleDownload = async (e, image) => {
+        e.stopPropagation();
+        const url = image.imageUrl || image.thumbUrl;
+        try {
+            const res = await fetch(url);
+            const blob = await res.blob();
+            const blobUrl = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = blobUrl;
+            a.download = image.title ? `${image.title.slice(0, 50)}.jpg` : 'image.jpg';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(blobUrl);
+            showToast('⬇️ Download started!');
+        } catch {
+            // Fallback: open in new tab
+            window.open(url, '_blank');
+            showToast('📎 Opened in new tab');
         }
     };
 
@@ -435,18 +485,34 @@ export default function DashboardPage() {
                                 <div className="image-card-img-wrapper">
                                     <img src={image.thumbUrl || image.imageUrl} alt={image.title || 'Image'} loading="lazy" />
                                     <div className="image-card-overlay">
-                                        <button
-                                            className={`pick-btn ${isSelected(image) ? 'picked' : ''}`}
-                                            onClick={(e) => { e.stopPropagation(); toggleSelection(image); }}
-                                        >
-                                            {isSelected(image) ? '✓ Picked' : '+ Pick'}
-                                        </button>
+                                        <div className="image-card-actions">
+                                            <button
+                                                className={`pick-btn ${isSelected(image) ? 'picked' : ''}`}
+                                                onClick={(e) => { e.stopPropagation(); toggleSelection(image); }}
+                                            >
+                                                {isSelected(image) ? '✓' : '+'}
+                                            </button>
+                                            <button
+                                                className="action-btn copy-btn"
+                                                onClick={(e) => handleCopyUrl(e, image)}
+                                                title="Copy image URL"
+                                            >
+                                                📋
+                                            </button>
+                                            <button
+                                                className="action-btn download-btn"
+                                                onClick={(e) => handleDownload(e, image)}
+                                                title="Download image"
+                                            >
+                                                ⬇️
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                                 <div className="image-card-info">
                                     <div className="image-card-title">{image.title || 'Untitled'}</div>
                                     <div className="image-card-meta">
-                                        <span className={`image-card-source ${image.source}`}>{image.source}</span>
+                                        <span className={`image-card-source ${image.source}`}>{SOURCE_LABELS[image.source] || image.source}</span>
                                         {image.date && <span className="image-card-date">{image.date}</span>}
                                     </div>
                                 </div>
@@ -495,6 +561,11 @@ export default function DashboardPage() {
                     ))}
                 </div>
             </div>
+
+            {/* Toast Notification */}
+            {toast && (
+                <div className="toast-notification">{toast}</div>
+            )}
         </>
     );
 }

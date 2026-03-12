@@ -589,8 +589,15 @@ body::before {
   opacity: 1;
 }
 
+.image-card-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  width: 100%;
+}
+
 .pick-btn {
-  padding: 8px 18px;
+  padding: 8px 14px;
   background: var(--accent-gradient);
   border: none;
   border-radius: var(--radius-sm);
@@ -611,6 +618,32 @@ body::before {
 
 .pick-btn.picked {
   background: var(--success);
+}
+
+.action-btn {
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(8px);
+  color: white;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+}
+
+.action-btn:first-of-type {
+  margin-left: auto;
+}
+
+.action-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
+  transform: scale(1.1);
 }
 
 .image-card-info {
@@ -670,6 +703,11 @@ body::before {
 .image-card-source.epochtimes {
   color: #1a3a5c;
   background: rgba(26, 58, 92, 0.08);
+}
+
+.image-card-source.epochtimes-web {
+  color: #2d6a4f;
+  background: rgba(45, 106, 79, 0.08);
 }
 
 .image-card-date {
@@ -1369,5 +1407,34 @@ body::before {
 
   .settings-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+/* ===== Toast Notification ===== */
+.toast-notification {
+  position: fixed;
+  bottom: 32px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(12px);
+  color: white;
+  padding: 12px 24px;
+  border-radius: var(--radius-lg);
+  font-size: 14px;
+  font-weight: 500;
+  z-index: 999;
+  animation: toastIn 0.3s ease;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
+}
+
+@keyframes toastIn {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
   }
 }

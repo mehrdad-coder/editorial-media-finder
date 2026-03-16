@@ -525,6 +525,11 @@ export default function DashboardPage() {
                                     <div className="image-card-title">{image.title || 'Untitled'}</div>
                                     <div className="image-card-meta">
                                         <span className={`image-card-source ${image.source}`}>{SOURCE_LABELS[image.source] || image.source}</span>
+                                        {image.source === 'shutterstock' && (
+                                            <span className={`license-badge ${image.licensed ? 'licensed' : 'unlicensed'}`}>
+                                                {image.licensed ? '✅ Licensed' : '💰 Purchase'}
+                                            </span>
+                                        )}
                                         {image.date && <span className="image-card-date">{image.date}</span>}
                                         <div className="image-card-btns">
                                             <button
@@ -582,6 +587,13 @@ export default function DashboardPage() {
                     />
                     <div className="lightbox-info" onClick={(e) => e.stopPropagation()}>
                         <div className="lightbox-title">{lightboxImage.title || 'Untitled'}</div>
+                        {lightboxImage.source === 'shutterstock' && (
+                            <div style={{ marginBottom: '8px' }}>
+                                <span className={`license-badge ${lightboxImage.licensed ? 'licensed' : 'unlicensed'}`} style={{ fontSize: '13px', padding: '4px 12px' }}>
+                                    {lightboxImage.licensed ? '✅ Already Licensed — Free to re-download' : '💰 Not Licensed — Purchase required'}
+                                </span>
+                            </div>
+                        )}
                         <div className="lightbox-actions">
                             <button className="lightbox-btn" onClick={(e) => handleCopyImage(e, lightboxImage)}>📋 Copy Image</button>
                             <button className="lightbox-btn" onClick={(e) => handleDownload(e, lightboxImage)}>⬇️ Download</button>

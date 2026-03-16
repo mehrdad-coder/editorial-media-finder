@@ -3,29 +3,25 @@ import { prisma } from '@/lib/prisma';
 
 export const maxDuration = 300;
 
-// Helper: delay
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-// Helper: fetch with retry on 429
 async function fetchWithRetry(url, options, maxRetries = 3) {
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
         const res = await fetch(url, options);
         if (res.status === 429) {
-            const retryAfter = parseInt(res.headers.get('retry-after') || '2', 10);
-            const waitTime = Math.max(retryAfter * 1000, 2000) * (attempt + 1);
-            console.log(`Rate limited, waiting ${waitTime}ms before retry ${attempt + 1}...`);
+            const waitTime = 3000 * (attempt + 1);
             await delay(waitTime);
             continue;
         }
         return res;
     }
-    throw new Error('Max retries exceeded due to rate limiting');
+    return null; // Return null instead of throwing
 }
 
 export async function POST(request) {
     const { searchParams } = new URL(request.url);
     const startPage = parseInt(searchParams.get('startPage') || '1', 10);
-    const maxPages = parseInt(searchParams.get('maxPages') || '30', 10);
+    const maxPages = parseInt(searchParams.get('maxPages') || '15', 10);
 
     const token = process.env.SHUTTERSTOCK_API_TOKEN;
     const clientId = process.env.SHUTTERSTOCK_CLIENT_ID;
@@ -35,72 +31,66 @@ export async function POST(request) {
         return NextResponse.json({ error: 'No API token configured' }, { status: 500 });
     }
 
-    try {
-        const auth = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-        let page = startPage;
-        const perPage = 200;
-        let totalSynced = 0;
-        let totalCount = 0;
-        let pagesProcessed = 0;
+    const auth = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+    let page = startPage;
+    const perPage = 200;
+    let totalSynced = 0;
+    let totalCount = 0;
+    let pagesProcessed = 0;
+    let lastError = null;
 
-        // Phase 1: Fetch licensed image IDs (with rate limit handling)
-        const allLicenses = [];
-        do {
+    try {
+        // Process one page at a time: fetch licenses → get details → save to DB
+        while (pagesProcessed < maxPages) {
+            // Step 1: Fetch one page of licenses
             const res = await fetchWithRetry(
                 `https://api.shutterstock.com/v2/images/licenses?per_page=${perPage}&page=${page}&sort=newest`,
                 { headers: { Authorization: `Bearer ${token}` } }
             );
 
-            if (!res.ok) {
-                const errText = await res.text();
-                // Return partial results if we've synced some
-                if (allLicenses.length > 0) break;
-                throw new Error(`Licenses API error (page ${page}): ${res.status}`);
+            if (!res || !res.ok) {
+                lastError = `Failed to fetch page ${page}`;
+                break;
             }
 
             const data = await res.json();
             totalCount = data.total_count || 0;
             const licenses = data.data || [];
 
+            if (licenses.length === 0) break;
+
+            // Step 2: Collect image IDs from this page
+            const pageLicenses = [];
             for (const lic of licenses) {
                 if (lic.image?.id) {
-                    allLicenses.push({
+                    pageLicenses.push({
                         id: lic.image.id,
                         licensedAt: lic.download_time || new Date().toISOString(),
                     });
                 }
             }
 
-            page++;
-            pagesProcessed++;
+            // Deduplicate within page
+            const seen = new Set();
+            const uniquePage = pageLicenses.filter(l => {
+                if (seen.has(l.id)) return false;
+                seen.add(l.id);
+                return true;
+            });
 
-            // Small delay between pages to avoid rate limiting
-            await delay(200);
+            // Step 3: Batch fetch image details (up to 50 at a time)
+            const BATCH = 50;
+            for (let i = 0; i < uniquePage.length; i += BATCH) {
+                const batch = uniquePage.slice(i, i + BATCH);
+                const ids = batch.map(l => l.id).join(',');
 
-        } while (allLicenses.length < totalCount && pagesProcessed < maxPages);
-
-        // Deduplicate
-        const uniqueMap = new Map();
-        for (const lic of allLicenses) {
-            if (!uniqueMap.has(lic.id)) {
-                uniqueMap.set(lic.id, lic);
-            }
-        }
-        const uniqueLicenses = Array.from(uniqueMap.values());
-
-        // Phase 2: Batch fetch image details and upsert to DB
-        const DETAIL_BATCH = 40;
-        for (let i = 0; i < uniqueLicenses.length; i += DETAIL_BATCH) {
-            const batch = uniqueLicenses.slice(i, i + DETAIL_BATCH);
-            const ids = batch.map(l => l.id).join(',');
-
-            let details = {};
-            try {
+                let details = {};
                 const detailRes = await fetchWithRetry(
                     `https://api.shutterstock.com/v2/images?id=${ids}&view=minimal`,
                     { headers: { Authorization: `Basic ${auth}` } }
                 );
-                if (detailRes.ok) {
+
+                if (detailRes && detailRes.ok) {
                     const detailData = await detailRes.json();
                     for (const img of (detailData.data || [])) {
                         details[img.id] = {
@@ -111,63 +101,68 @@ export async function POST(request) {
                         };
                     }
                 }
-            } catch (err) {
-                console.warn(`Detail fetch failed for batch at ${i}:`, err.message);
-            }
 
-            // Upsert each image
-            for (const lic of batch) {
-                const detail = details[lic.id] || {};
-                try {
-                    await prisma.licensedImage.upsert({
-                        where: { id: lic.id },
-                        update: {
-                            description: detail.description || '',
-                            thumbUrl: detail.thumbUrl || '',
-                            imageUrl: detail.imageUrl || '',
-                            contributor: detail.contributor || '',
-                            licensedAt: new Date(lic.licensedAt),
-                            syncedAt: new Date(),
-                        },
-                        create: {
-                            id: lic.id,
-                            description: detail.description || '',
-                            thumbUrl: detail.thumbUrl || '',
-                            imageUrl: detail.imageUrl || '',
-                            contributor: detail.contributor || '',
-                            licensedAt: new Date(lic.licensedAt),
-                            syncedAt: new Date(),
-                        },
-                    });
-                    totalSynced++;
-                } catch (err) {
-                    console.warn(`Upsert failed for image ${lic.id}:`, err.message);
+                // Step 4: Save to DB immediately
+                for (const lic of batch) {
+                    const detail = details[lic.id] || {};
+                    try {
+                        await prisma.licensedImage.upsert({
+                            where: { id: lic.id },
+                            update: {
+                                description: detail.description || '',
+                                thumbUrl: detail.thumbUrl || '',
+                                imageUrl: detail.imageUrl || '',
+                                contributor: detail.contributor || '',
+                                licensedAt: new Date(lic.licensedAt),
+                                syncedAt: new Date(),
+                            },
+                            create: {
+                                id: lic.id,
+                                description: detail.description || '',
+                                thumbUrl: detail.thumbUrl || '',
+                                imageUrl: detail.imageUrl || '',
+                                contributor: detail.contributor || '',
+                                licensedAt: new Date(lic.licensedAt),
+                                syncedAt: new Date(),
+                            },
+                        });
+                        totalSynced++;
+                    } catch (err) {
+                        // Skip individual failures
+                    }
                 }
+
+                // Rate limit: ~700ms between API calls
+                await delay(700);
             }
 
-            // Delay between detail batches
-            await delay(300);
+            page++;
+            pagesProcessed++;
+
+            // Check if we've fetched everything
+            if (page * perPage >= totalCount + perPage) break;
+
+            // Delay between pages
+            await delay(500);
         }
-
-        const nextPage = page;
-        const hasMore = allLicenses.length < totalCount && pagesProcessed >= maxPages;
-
-        return NextResponse.json({
-            success: true,
-            synced: totalSynced,
-            total: totalCount,
-            unique: uniqueLicenses.length,
-            pagesProcessed,
-            nextPage: hasMore ? nextPage : null,
-            hasMore,
-            message: hasMore
-                ? `Synced ${totalSynced} images (pages ${startPage}-${nextPage - 1}). Call again with ?startPage=${nextPage} to continue.`
-                : `Sync complete! ${totalSynced} images synced.`,
-        });
     } catch (error) {
-        console.error('Sync error:', error);
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        lastError = error.message;
     }
+
+    const hasMore = (page - 1) * perPage < totalCount;
+
+    return NextResponse.json({
+        success: true,
+        synced: totalSynced,
+        total: totalCount,
+        pagesProcessed,
+        nextPage: hasMore ? page : null,
+        hasMore,
+        error: lastError,
+        message: hasMore
+            ? `Synced ${totalSynced} images (pages ${startPage}-${page - 1}). Call again with ?startPage=${page} to continue.`
+            : `Sync complete! ${totalSynced} images synced.`,
+    });
 }
 
 // GET: Check sync status

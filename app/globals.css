@@ -710,6 +710,11 @@ body::before {
   background: rgba(45, 106, 79, 0.08);
 }
 
+.image-card-source.my-library {
+  color: #0a7a55;
+  background: rgba(15, 165, 115, 0.1);
+}
+
 .image-card-date {
   font-size: 11px;
   color: var(--text-muted);

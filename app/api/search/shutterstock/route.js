@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
 
 export async function GET(request) {
     const { searchParams } = new URL(request.url);
@@ -35,13 +36,13 @@ export async function GET(request) {
             source: 'shutterstock',
             date: item.added_date || '',
             metadata: JSON.stringify({ contributor: item.contributor?.id }),
-            licensed: false, // default, will be updated below
+            licensed: false,
         }));
 
-        // Check license status if we have an OAuth token
-        if (apiToken && results.length > 0) {
+        // Check license status — use local cache first, fall back to API
+        if (results.length > 0) {
             const imageIds = results.map(r => r.id);
-            const licensedMap = await checkLicenseStatus(imageIds, apiToken);
+            const licensedMap = await checkLicenseStatusCached(imageIds, apiToken);
             for (const result of results) {
                 result.licensed = !!licensedMap[result.id];
             }
@@ -57,27 +58,73 @@ export async function GET(request) {
     }
 }
 
-async function checkLicenseStatus(imageIds, token) {
+async function checkLicenseStatusCached(imageIds, apiToken) {
     const licensedMap = {};
-    const BATCH_SIZE = 5;
 
-    for (let i = 0; i < imageIds.length; i += BATCH_SIZE) {
-        const batch = imageIds.slice(i, i + BATCH_SIZE);
-        const checks = batch.map(async (imageId) => {
-            try {
-                const res = await fetch(
-                    `https://api.shutterstock.com/v2/images/licenses?image_id=${imageId}&per_page=1`,
-                    { headers: { Authorization: `Bearer ${token}` } }
-                );
-                if (res.ok) {
-                    const data = await res.json();
-                    licensedMap[imageId] = (data.total_count || 0) > 0;
-                }
-            } catch {
-                // silently skip
-            }
+    try {
+        // Check local cache first (fast!)
+        const cachedImages = await prisma.licensedImage.findMany({
+            where: { id: { in: imageIds } },
+            select: { id: true },
         });
-        await Promise.all(checks);
+
+        const cachedIds = new Set(cachedImages.map(img => img.id));
+        const uncachedIds = [];
+
+        for (const id of imageIds) {
+            if (cachedIds.has(id)) {
+                licensedMap[id] = true;
+            } else {
+                uncachedIds.push(id);
+            }
+        }
+
+        // For uncached IDs, check Shutterstock API if token available
+        if (uncachedIds.length > 0 && apiToken) {
+            const BATCH_SIZE = 5;
+            for (let i = 0; i < uncachedIds.length; i += BATCH_SIZE) {
+                const batch = uncachedIds.slice(i, i + BATCH_SIZE);
+                const checks = batch.map(async (imageId) => {
+                    try {
+                        const res = await fetch(
+                            `https://api.shutterstock.com/v2/images/licenses?image_id=${imageId}&per_page=1`,
+                            { headers: { Authorization: `Bearer ${apiToken}` } }
+                        );
+                        if (res.ok) {
+                            const data = await res.json();
+                            licensedMap[imageId] = (data.total_count || 0) > 0;
+                        }
+                    } catch {
+                        // silently skip
+                    }
+                });
+                await Promise.all(checks);
+            }
+        }
+    } catch (err) {
+        // If DB is not ready, fall back to API-only checking
+        console.warn('Cache check failed, falling back to API:', err.message);
+        if (apiToken) {
+            const BATCH_SIZE = 5;
+            for (let i = 0; i < imageIds.length; i += BATCH_SIZE) {
+                const batch = imageIds.slice(i, i + BATCH_SIZE);
+                const checks = batch.map(async (imageId) => {
+                    try {
+                        const res = await fetch(
+                            `https://api.shutterstock.com/v2/images/licenses?image_id=${imageId}&per_page=1`,
+                            { headers: { Authorization: `Bearer ${apiToken}` } }
+                        );
+                        if (res.ok) {
+                            const data = await res.json();
+                            licensedMap[imageId] = (data.total_count || 0) > 0;
+                        }
+                    } catch {
+                        // silently skip
+                    }
+                });
+                await Promise.all(checks);
+            }
+        }
     }
 
     return licensedMap;

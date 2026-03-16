@@ -49,3 +49,13 @@ model Setting {
   value     String
   updatedAt DateTime @updatedAt
 }
+
+model LicensedImage {
+  id          String   @id // Shutterstock image ID
+  description String   @default("")
+  thumbUrl    String   @default("")
+  imageUrl    String   @default("")
+  contributor String   @default("")
+  licensedAt  DateTime @default(now())
+  syncedAt    DateTime @default(now())
+}

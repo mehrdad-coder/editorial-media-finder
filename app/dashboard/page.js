@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 
 const SOURCES = [
     { id: 'all', label: 'All Sources', color: '#a29bfe' },
+    { id: 'my-library', label: 'My Library', color: '#0fa573' },
     { id: 'epochtimes', label: 'ET Photo Wire', color: '#1a3a5c' },
     { id: 'epochtimes-web', label: 'ET Published', color: '#2d6a4f' },
     { id: 'wordpress', label: 'WordPress', color: '#00cec9' },
@@ -16,6 +17,7 @@ const SOURCES = [
 ];
 
 const SOURCE_LABELS = {
+    'my-library': 'My Library',
     'epochtimes': 'ET Photo Wire',
     'epochtimes-web': 'ET Published',
     'wordpress': 'WordPress',
@@ -160,7 +162,7 @@ export default function DashboardPage() {
 
         try {
             const sourcesToSearch = activeSource === 'all'
-                ? ['epochtimes', 'epochtimes-web', 'wordpress', 'shutterstock', 'getty', 'ap', 'reuters']
+                ? ['my-library', 'epochtimes', 'epochtimes-web', 'wordpress', 'shutterstock', 'getty', 'ap', 'reuters']
                 : [activeSource];
 
             const allResults = [];
@@ -525,7 +527,7 @@ export default function DashboardPage() {
                                     <div className="image-card-title">{image.title || 'Untitled'}</div>
                                     <div className="image-card-meta">
                                         <span className={`image-card-source ${image.source}`}>{SOURCE_LABELS[image.source] || image.source}</span>
-                                        {image.source === 'shutterstock' && (
+                                        {(image.source === 'shutterstock' || image.source === 'my-library') && (
                                             <span className={`license-badge ${image.licensed ? 'licensed' : 'unlicensed'}`}>
                                                 {image.licensed ? '✅ Licensed' : '💰 Purchase'}
                                             </span>
